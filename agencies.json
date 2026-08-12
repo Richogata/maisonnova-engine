@@ -1,7 +1,18 @@
 {
+  "maisonnova-immobilier": {
+    "name": "MaisonNova Immobilier",
+    "logo_url": "",
+    "city": "Lyon",
+    "email": "Kolani2021@gmail.com",
+    "calendly_url": "https://calendly.com/kolani2021/30min",
+    "threshold": 70,
+    "description": "Votre agence immobilière indépendante à Lyon",
+    "app_url": "https://maisonnova-engine-5ags9g5k62gmcxo468ngiu.streamlit.app",
+    "created_at": "2026-08-12T18:30:00"
+  },
   "maisonsilas": {
     "name": "MaisonSilas",
-    "logo_url": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=200&auto=format&fit=crop](https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=200&auto=format&fit=crop)",
+    "logo_url": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=200&auto=format&fit=crop",
     "city": "Paris",
     "email": "kolani2021@gmail.com",
     "calendly_url": "https://calendly.com/kolani2021/30min",
