@@ -7,7 +7,7 @@
     "calendly_url": "https://calendly.com/kolani2021/30min",
     "threshold": 60,
     "description": "L'immobilier de demain, aujourd'hui.",
-    "app_url": "http://localhost:8502",
+    "app_url": "https://maisonnova-engine-5ags9g5k62gmcxo468ngiu.streamlit.app",
     "created_at": "2026-08-11T23:05:18"
   }
 }

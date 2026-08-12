@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MaisonSilas — Agence Immobilière Paris | Qualification de projet</title>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  PAGE DE DÉMO — WIDGET MAISONNOVA ENGINE
+  ───────────────────────────────────────────────────────────────────────────
+  Ce fichier simule le site d'une agence immobilière avec le widget intégré,
+  pour que vous puissiez tester l'expérience exacte de vos futurs clients.
+
+  ➤ 1. Ouvrez ce fichier dans votre navigateur (double-clic).
+  ➤ 2. Le widget à droite est le chat de qualification EN LIGNE (app déployée).
+  ➤ 3. Discutez avec le bot : chaque lead est enregistré dans l'admin en ligne.
+
+  POUR L'INTÉGRER SUR UN VRAI SITE :
+  → Copiez simplement la balise <iframe> ci-dessous (section "widget")
+    dans votre site : WordPress (bloc HTML), Wix, Webflow, Jimdo…
+  → Changez "src" pour pointer vers l'agence souhaitée :
+      https://VOTRE-APP.streamlit.app/?agency=slug-de-l-agence&embed=1
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #FAFAF7; color: #1C1C1E; line-height: 1.6;
+  }
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 40px; background: #fff; border-bottom: 1px solid #eee;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; }
+  .nav .brand .logo { width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, #F0D48A, #C9A227); display: flex;
+    align-items: center; justify-content: center; font-size: 17px; }
+  .nav .links { display: flex; gap: 24px; font-size: 14px; color: #555; }
+  .nav .links span { cursor: pointer; }
+  .nav .links span:hover { color: #C9A227; }
+  .hero {
+    background: linear-gradient(135deg, #1C1C1E 0%, #2E2A1A 100%);
+    color: #fff; padding: 60px 40px; text-align: center;
+  }
+  .hero h1 { font-size: 40px; font-weight: 800; letter-spacing: -0.5px; }
+  .hero h1 em { color: #E8CE7E; font-style: normal; }
+  .hero p { margin-top: 12px; font-size: 17px; opacity: .85; max-width: 640px; margin-left: auto; margin-right: auto; }
+  .main { display: flex; gap: 40px; max-width: 1080px; margin: 40px auto; padding: 0 24px; align-items: flex-start; }
+  .left { flex: 1; }
+  .left h2 { font-size: 24px; margin-bottom: 14px; }
+  .left .card {
+    background: #fff; border-radius: 16px; padding: 20px 22px; margin-bottom: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.06); border: 1px solid #eee;
+  }
+  .left .card h3 { font-size: 15px; margin-bottom: 6px; color: #C9A227; text-transform: uppercase; letter-spacing: .06em; font-size: 12px; }
+  .left ul { list-style: none; }
+  .left li { padding: 7px 0; border-bottom: 1px dashed #eee; font-size: 14.5px; }
+  .left li:last-child { border-bottom: none; }
+  .widget-zone { flex: 0 0 480px; }
+  .widget-zone .tag {
+    text-align: center; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: #8E8E93; margin-bottom: 10px; font-weight: 700;
+  }
+  /* ─── LE WIDGET : cette balise iframe est tout ce qu'il faut copier ─── */
+  .widget-zone iframe {
+    width: 460px; height: 620px; border: none; border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(31,38,66,.15);
+    background: #fff;
+  }
+  .footer { text-align: center; padding: 30px; font-size: 13px; color: #8E8E93;
+    border-top: 1px solid #eee; background: #fff; }
+</style>
+</head>
+<body>
+
+  <div class="nav">
+    <div class="brand"><span class="logo">🏡</span> MaisonSilas</div>
+    <div class="links"><span>Acheter</span><span>Vendre</span><span>Estimation</span><span>Nos conseillers</span><span>Contact</span></div>
+  </div>
+
+  <div class="hero">
+    <h1>Votre projet immobilier à Paris, <em>qualifié en 2 minutes</em></h1>
+    <p>Répondez à quelques questions : un conseiller MaisonSilas vous rappelle avec une analyse personnalisée de votre projet — sans engagement.</p>
+  </div>
+
+  <div class="main">
+    <div class="left">
+      <h2>Pourquoi passer par notre diagnostic ?</h2>
+      <div class="card">
+        <h3>🕐 Réponse rapide</h3>
+        <ul>
+          <li>Analyse immédiate de votre projet, 24h/24</li>
+          <li>Un conseiller dédié sous 24h ouvrées</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🎯 Un accompagnement sur mesure</h3>
+        <ul>
+          <li>Budget, financement et secteur étudiés pour vous</li>
+          <li>Accès aux biens correspondant à votre profil</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>📍 MaisonSilas — Paris</h3>
+        <ul>
+          <li>12 rue de la République, 75003 Paris</li>
+          <li>contact@maisonsilas.fr · 01 23 45 67 89</li>
+          <li>Lun–Sam · 9h–19h</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="widget-zone">
+      <div class="tag">✦ Évaluez votre projet maintenant ✦</div>
+      <!--
+        ⬇️ WIDGET MAISONNOVA — copiez cette balise <iframe> sur le site de l'agence
+        (changez ?agency= par le slug de l'agence concernée)
+      -->
+      <iframe
+        src="https://maisonnova-engine-5ags9g5k62gmcxo468ngiu.streamlit.app/?agency=maisonsilas&embed=1"
+        title="Qualification MaisonSilas"
+        loading="lazy"></iframe>
+    </div>
+  </div>
+
+  <div class="footer">
+    MaisonSilas — Agence immobilière · Site de démonstration du widget MaisonNova Engine
+  </div>
+
+</body>
+</html>

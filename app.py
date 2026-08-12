@@ -1137,12 +1137,13 @@ def render_admin():
             qualify_url = f"{base}/?agency={sel}"
             st.divider()
             st.markdown("### 🔗 URL de qualification générée")
-            st.text_input("Lien à intégrer sur votre site / à partager",
-                          value=qualify_url, key="adm_qualify_url", disabled=True)
+            st.code(qualify_url, language=None)
+            st.caption("💡 Cliquez sur l'icône **Copier** (en haut à droite du bloc) pour récupérer "
+                       "le lien à partager et à intégrer sur le site de l'agence.")
             st.markdown("_Ouvrez ce lien dans un **nouvel onglet privé** pour vivre "
                         "l'expérience prospect (score, bouton doré, sauvegarde du lead)._")
 
-    # ============ Onglet GOOGLE SHEETS ============
+        # ============ Onglet GOOGLE SHEETS ============
     with tab_sheets:
         st.markdown("### 📗 Stockage Google Sheets")
         st.markdown(
