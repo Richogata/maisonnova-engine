@@ -48,8 +48,8 @@ def _cfg(name: str, default: str = "") -> str:
 # --- Variables d'environnement (voir .env.example) -----------------------------
 ADMIN_PASSWORD      = _cfg("ADMIN_PASSWORD", "admin123")              # ⚠️ à changer
 GEMINI_API_KEY      = _cfg("GEMINI_API_KEY", "")
-GEMINI_MODELS       = [m for m in _cfg("GEMINI_MODEL", "gemini-2.0-flash").split(",") if m]
-GEMINI_MODELS      += ["gemini-2.5-flash", "gemini-1.5-flash"]          # replis auto
+GEMINI_MODELS       = [m for m in _cfg("GEMINI_MODEL", "gemini-flash-latest").split(",") if m]
+GEMINI_MODELS      += ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]  # replis auto
 
 AGENCY_FILE         = _cfg("AGENCY_FILE", "agencies.json")
 LEADS_FILE          = _cfg("LEADS_FILE", "leads.csv")

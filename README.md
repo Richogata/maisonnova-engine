@@ -31,7 +31,7 @@ streamlit run app.py
 
 ## 🤖 Moteur IA (Gemini)
 
-- Modèles essayés dans l'ordre : `gemini-2.0-flash` (défaut, rapide) → `gemini-2.5-flash` → `gemini-1.5-flash`.
+- Modèles essayés dans l'ordre : `gemini-flash-latest` (défaut, suit les modèles Google actuels) → `gemini-3.5-flash` → `gemini-3.1-flash-lite`.
 - L'IA accueille le prospect **au nom de l'agence**, adapte ses 5 questions au profil, extrait les réponses en **JSON** et rédige la synthèse de clôture.
 - En cas de panne API, un **scoring par règles** (regex français) prend le relais automatiquement.
 
