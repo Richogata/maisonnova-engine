@@ -8,6 +8,7 @@ Simule le module streamlit pour importer app.py, vérifie :
 import sys
 import types
 import os
+import json
 import traceback
 
 # repart d'un état propre (fichiers générés par les runs précédents)
@@ -50,7 +51,15 @@ def _ctx(*a, **k):
 
 
 def _query_params():
-    # route vers l'interface prospect avec l'agence de démo (test du boot prospect)
+    # route vers l'interface prospect avec l'agence présente dans agencies.json
+    # (test du boot prospect — robuste quel que soit le contenu du fichier)
+    try:
+        with open("agencies.json", encoding="utf-8") as _f:
+            _ag = json.load(_f)
+        if isinstance(_ag, dict) and _ag:
+            return {"agency": next(iter(_ag))}
+    except Exception:
+        pass
     return {"agency": "maisonnova-lyon"}
 
 

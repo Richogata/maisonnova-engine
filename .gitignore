@@ -8,6 +8,8 @@ sheets_config.json
 # ── Données générées à l'exécution ───────────────────────────────────
 leads.csv
 alerts.log
+streamlit*.log
+*.log
 
 # ── Python ───────────────────────────────────────────────────────────
 __pycache__/
