@@ -435,7 +435,9 @@ Ton rôle est de poser UNE question à la fois pour qualifier le projet.
 QUESTION À POSER MAINTENANT ({n}/5, catégorie « {label} ») :
 {template}
 Adapte légèrement la formulation au profil déjà connu du prospect (par ex. cite son prénom ou son projet),
-mais ne pose JAMAIS une autre question et ne réponds pas à sa place."""
+mais ne pose JAMAIS une autre question et ne réponds pas à sa place.
+Réponds UNIQUEMENT avec la question posée, directement : aucun titre, aucune étiquette,
+aucun préfixe ("Question :", "Ask for..."), aucune apostrophe de formatage, aucune note."""
 
 SYSTEM_SUMMARY = """Tu es un expert immobilier. Rédige une synthèse de qualification pour un prospect.
 Réponds UNIQUEMENT en JSON valide :
@@ -561,8 +563,10 @@ def generate_welcome(agency: dict) -> str:
     """Message d'accueil de l'assistant, au nom de l'agence."""
     sys_p = (f"Tu es {agency.get('name')} assistant virtuel, conseiller immobilier premium à "
              f"{agency.get('city','')}. Ton ton : chaleureux, élégant, très concis (2-3 phrases). "
-             f"En français, sans markdown, sans emoji excessif. Accueille le visiteur au nom de "
-             f"l'agence, présente-toi et demande-lui son prénom. Message : « {agency.get('description','')} »")
+             f"En français uniquement, sans markdown, sans emoji excessif. Accueille le visiteur au nom de "
+             f"l'agence, présente-toi et demande-lui son prénom. Message : « {agency.get('description','')} »\n"
+             f"Réponds UNIQUEMENT avec le message d'accueil lui-même : aucun titre, aucune étiquette, "
+             f"aucun préfixe (\"Message :\", \"Ask for...\", \"Accueil :\"), aucune apostrophe de formatage.")
     msg = ai_complete(sys_p, "Présente-toi et demande le prénom du prospect.", temperature=0.8, max_tokens=250)
     if msg:
         return msg.strip()
@@ -701,19 +705,27 @@ p, li, label, span { font-family: 'Inter', sans-serif; }
 .score-foot { display:flex; justify-content:space-between; margin-top:8px; font-size:11.5px; color:var(--gray); font-weight:500; }
 
 /* ---------- chat (bulles style iMessage/Apple) ---------- */
-[data-testid="stChatMessage"] { max-width: 620px; margin-left:auto; margin-right:auto;
-  animation: msgIn .28s cubic-bezier(.2,.8,.2,1) both; }
-@keyframes msgIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
-[data-testid="stChatMessageAvatarUser"], [data-testid="stChatMessageAvatarAssistant"] {
-  font-size: 17px; background: transparent; border-radius: 50%;
-}
-[data-testid="stChatMessage"] [data-testid="stChatMessageContent"] p {
-  font-size: 15px; line-height: 1.6; color: var(--ink); margin: 0;
+[data-testid="stChatMessage"] { max-width: 640px; margin-left:auto; margin-right:auto;
+  overflow: visible !important; }
+@keyframes msgIn { from { opacity:0; } to { opacity:1; } }
+[data-testid="stChatMessage"] { animation: msgIn .25s ease-out; }
+[data-testid="stChatMessageAvatar"], [data-testid^="stChatMessageAvatar"] {
+  width: 36px; height: 36px; min-width: 36px; min-height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; line-height: 1; overflow: visible !important; border-radius: 50%;
 }
 [data-testid="stChatMessageContent"] {
-  padding: 13px 18px; border-radius: 20px;
+  padding: 12px 16px; border-radius: 20px; overflow: visible !important;
   background: #FFFFFF; border: 1px solid rgba(0,0,0,.06);
   box-shadow: 0 2px 12px rgba(31,38,66,.06);
+  min-width: 0; max-width: 100%;
+  overflow-wrap: break-word; word-break: break-word;
+}
+[data-testid="stChatMessageContent"] * {
+  overflow-wrap: break-word; word-break: break-word; white-space: normal;
+}
+[data-testid="stChatMessageContent"] p {
+  font-size: 15.5px; line-height: 1.65; color: var(--ink); margin: 0;
 }
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
   background: var(--bubble); border: 1px solid rgba(0,0,0,.04);
