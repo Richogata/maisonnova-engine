@@ -1,0 +1,24 @@
+# ── Secrets & configuration locale (ne JAMAIS committer) ─────────────
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+sheets_config.json
+
+# ── Données générées à l'exécution ───────────────────────────────────
+leads.csv
+alerts.log
+
+# ── Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ── IDE / OS ─────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

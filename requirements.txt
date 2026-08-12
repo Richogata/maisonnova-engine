@@ -1,0 +1,10 @@
+# MaisonNova Engine v1 — dépendances
+# Installation :  pip install -r requirements.txt
+
+streamlit>=1.37,<2.0          # interface web
+google-generativeai>=0.7.2    # moteur IA Gemini (compatible gemini-1.5 / 2.0 / 2.5)
+python-dotenv>=1.0.0          # chargement du fichier .env
+
+# --- Optionnel : stockage Google Sheets ---
+gspread>=6.0
+google-auth>=2.0

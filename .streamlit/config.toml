@@ -1,0 +1,19 @@
+# ── MaisonNova Engine v1 ─────────────────────────────────────────────
+# Thème clair premium (fond blanc, accents dorés)
+
+[theme]
+base = "light"
+primaryColor = "#C9A227"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F7F9"
+textColor = "#1C1C1E"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+
+[client]
+toolbarMode = "minimal"

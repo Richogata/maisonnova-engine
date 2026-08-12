@@ -1,0 +1,13 @@
+{
+  "maisonsilas": {
+    "name": "MaisonSilas",
+    "logo_url": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=200&auto=format&fit=crop](https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=200&auto=format&fit=crop)",
+    "city": "Paris",
+    "email": "kolani2021@gmail.com",
+    "calendly_url": "https://calendly.com/kolani2021/30min",
+    "threshold": 60,
+    "description": "L'immobilier de demain, aujourd'hui.",
+    "app_url": "http://localhost:8502",
+    "created_at": "2026-08-11T23:05:18"
+  }
+}
