@@ -54,6 +54,7 @@ guide_builder.py       # génération du guide interactif HTML (client_guide.htm
 client_kit.py          # export du dossier client (MaisonNova_<slug>_Client_Kit.zip)
 admin_views.py         # nouveaux onglets admin (UI Streamlit)
 site_extractor.py      # extraction auto des infos depuis l'URL du site client
+send_client_kit.py     # CLI : génère le kit de livraison d'un client (guide + ZIP + email)
 smoke_test.py          # 26 scénarios, fichiers temporaires isolés
 ```
 

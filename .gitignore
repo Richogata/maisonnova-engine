@@ -15,6 +15,9 @@ guides_content.json
 streamlit*.log
 *.log
 
+# sorties du script de livraison (send_client_kit.py)
+deliverables/
+
 # ── Python ───────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
