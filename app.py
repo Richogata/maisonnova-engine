@@ -727,14 +727,19 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"], [data-testid="st
 ::-webkit-scrollbar-thumb:hover { background: rgba(201,162,39,.55); }
 [data-testid="stVerticalBlock"] { position: relative; z-index: 1; }
 
-/* masquer 100 % du chrome Streamlit (menu, footer « Made with Streamlit »,
-   bouton Deploy, indicateur d'exécution, toolbar) — zéro filigrane */
-#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"],
+/* masquer 100 % du chrome Streamlit (menu « Made with Streamlit », bouton
+   Deploy, indicateur d'exécution, toolbar, header) — zéro filigrane.
+   Sélecteurs Streamlit 1.58 : le filigrane vit dans stMainMenu/stHeader. */
+[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"],
 [data-testid="stStatusWidget"], [data-testid="stFooter"], [data-testid="stAppDeployButton"],
-[data-testid="stSidebarNav"], [data-testid="stPopoverMenu"], .stDeployButton {
-  display: none !important; visibility: hidden !important; height: 0 !important;
+[data-testid="stSidebarNav"], [data-testid="stPopoverMenu"],
+[data-testid="stMainMenu"], [data-testid="stMainMenuButton"],
+[data-testid="stMainMenuList"], [data-testid="stMainMenuPopover"],
+[data-testid="stThemeSwitcher"], [data-testid="stConnectionStatus"],
+[data-testid="stTopNavPopover"], [data-testid="stElementToolbar"],
+#MainMenu, footer, .stDeployButton {
+  display: none !important; visibility: hidden !important;
 }
-[data-testid="stHeader"] { background: transparent !important; }
 [data-testid="stAppViewContainer"] { max-width: 100vw; }
 
 /* ---------- typographie & titres ---------- */
@@ -1419,7 +1424,8 @@ def render_admin():
 # ───────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="MaisonNova Engine", page_icon="🏡",
-                   layout="centered", initial_sidebar_state="collapsed")
+                   layout="centered", initial_sidebar_state="collapsed",
+                   menu_items=None)  # désactive le menu Streamlit (zéro filigrane)
 inject_css()
 
 # Agence de démonstration au premier lancement (disponible avant même le login admin)
