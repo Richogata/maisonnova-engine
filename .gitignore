@@ -8,6 +8,10 @@ sheets_config.json
 # ── Données générées à l'exécution ───────────────────────────────────
 leads.csv
 alerts.log
+test_leads.csv
+clients.json
+guides/
+guides_content.json
 streamlit*.log
 *.log
 

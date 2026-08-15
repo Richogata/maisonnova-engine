@@ -22,6 +22,16 @@ import datetime
 
 import streamlit as st
 
+# Modules "nouvelle génération" (dossier clients, config chatbot, guide, kit…)
+import clients_store
+import chatbot_config
+import ai_provider
+import widget_code
+import guide_content
+import guide_builder
+import client_kit
+import admin_views
+
 # ───────────────────────────────────────────────────────────────────────────────
 # 1. ENVIRONNEMENT & CONFIGURATION
 # ───────────────────────────────────────────────────────────────────────────────
@@ -65,6 +75,11 @@ SMTP_PORT           = int(_cfg("SMTP_PORT", "587"))
 SMTP_USER           = _cfg("SMTP_USER", "")
 SMTP_PASSWORD       = _cfg("SMTP_PASSWORD", "")
 
+# Nouveaux fichiers (dossiers clients, leads de test, guides)
+CLIENTS_FILE        = _cfg("CLIENTS_FILE", "clients.json")
+TEST_LEADS_FILE     = _cfg("TEST_LEADS_FILE", "test_leads.csv")
+GUIDES_DIR          = _cfg("GUIDES_DIR", "guides")
+
 APP_BASE_URL        = _cfg("APP_BASE_URL", "http://localhost:8501")
 
 GOLD      = "#C9A227"
@@ -78,61 +93,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # 2. OUTILS — MODÈLES & GEMINI
 # ───────────────────────────────────────────────────────────────────────────────
 
-def _init_genai():
-    """Initialise le SDK Gemini si la clé est présente. Retourne True si OK."""
-    if not GEMINI_API_KEY:
-        return False
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        return True
-    except Exception as exc:
-        logging.warning("Gemini indisponible : %s", exc)
-        return False
-
-GEMINI_READY = _init_genai()
+# Couche d'abstraction IA (Gemini existant + repli automatique + mode dégradé)
+AI_PROVIDER = ai_provider.AIProvider(api_key=GEMINI_API_KEY, models=GEMINI_MODELS)
+GEMINI_READY = AI_PROVIDER.ready
 
 
 def ai_complete(system_prompt: str, user_text: str, temperature: float = 0.6,
                 json_mode: bool = False, max_tokens: int = 700) -> str | None:
-    """Appelle Gemini (legacy SDK) avec repli automatique de modèle.
-    Retourne le texte brut, ou None en cas d'échec total."""
-    if not GEMINI_READY:
-        return None
-    import google.generativeai as genai
-    for name in GEMINI_MODELS:
-        try:
-            genai.GenerativeModel(model_name=name)
-            cfg = genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                **( {"response_mime_type": "application/json"} if json_mode else {} ),
-            )
-            model = genai.GenerativeModel(model_name=name, system_instruction=system_prompt)
-            resp = model.generate_content(user_text, generation_config=cfg,
-                                          request_options={"timeout": 60})
-            return resp.text
-        except Exception as exc:
-            logging.debug("Modèle %s en échec : %s", name, exc)
-            continue
-    return None
+    """Appelle l'IA via AIProvider (Gemini + repli de modèle). None si indisponible."""
+    return AI_PROVIDER.complete(system_prompt, user_text, temperature=temperature,
+                                json_mode=json_mode, max_tokens=max_tokens)
 
 
 def ai_json(system_prompt: str, user_text: str, max_tokens: int = 800) -> dict | None:
-    """Version 'mode JSON' avec nettoyage robuste des réponses."""
-    raw = ai_complete(system_prompt, user_text, temperature=0.2, json_mode=True, max_tokens=max_tokens)
-    if not raw:
-        return None
-    raw = raw.strip()
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    start, end = raw.find("{"), raw.rfind("}")
-    if start == -1 or end == -1:
-        return None
-    try:
-        return json.loads(raw[start:end + 1])
-    except Exception:
-        return None
+    """Version 'mode JSON' avec nettoyage robuste des réponses (déléguée à AIProvider)."""
+    return AI_PROVIDER.json(system_prompt, user_text, max_tokens=max_tokens)
 
 # ───────────────────────────────────────────────────────────────────────────────
 # 3. AGENCES — CONFIGURATION LOCALE (agencies.json)
@@ -157,12 +132,22 @@ def slugify(text: str) -> str:
 
 
 def load_agencies() -> dict:
+    """Fiches agences = clients (source maître, clients.json) + fichier legacy
+    agencies.json (jamais cassé : les clients sont resynchronisés dessus)."""
+    agencies = {}
+    try:
+        agencies.update(clients_store.all_agencies())
+    except Exception:
+        pass
     try:
         with open(AGENCY_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data if isinstance(data, dict) else {}
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    agencies.setdefault(k, v)
     except Exception:
-        return {}
+        pass
+    return agencies
 
 
 def save_agencies(data: dict):
@@ -171,22 +156,9 @@ def save_agencies(data: dict):
 
 
 def ensure_default_agencies():
-    """Crée une agence de démonstration au premier lancement (URL testable tout de suite)."""
-    agencies = load_agencies()
-    if not agencies:
-        slug = "maisonnova-lyon"
-        agencies[slug] = {
-            "name": "MaisonNova Lyon",
-            "logo_url": "",
-            "city": "Lyon",
-            "email": "contact@maisonnova.fr",
-            "calendly_url": "https://calendly.com/maisonnova/rendezvous-expert",
-            "threshold": 70,
-            "description": "Votre conseiller immobilier de confiance à Lyon",
-            "app_url": APP_BASE_URL,
-            "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        }
-        save_agencies(agencies)
+    """Crée un client de démonstration au premier lancement (délégué au dossier
+    clients, qui resynchronise agencies.json — le moteur existant n'est pas touché)."""
+    clients_store.ensure_default_client(APP_BASE_URL)
 
 
 def get_agency(slug: str) -> dict | None:
@@ -231,6 +203,45 @@ def load_leads() -> list[dict]:
     except Exception as exc:
         logging.error("Lecture CSV impossible : %s", exc)
         return []
+
+
+def load_csv_rows(path: str) -> list[dict]:
+    """Lit n'importe quel CSV de leads (réels ou de test)."""
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            return list(csv.DictReader(f))
+    except Exception as exc:
+        logging.error("Lecture CSV impossible (%s) : %s", path, exc)
+        return []
+
+
+def delete_lead_row(path: str, index: int) -> bool:
+    """Supprime la ligne `index` d'un CSV de leads et réécrit le fichier.
+    (N'affecte pas Google Sheets — la copie Sheets reste intacte.)"""
+    rows = load_csv_rows(path)
+    if not 0 <= index < len(rows):
+        return False
+    del rows[index]
+    try:
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=LEAD_COLUMNS)
+            w.writeheader()
+            w.writerows(rows)
+        return True
+    except Exception as exc:
+        logging.error("Suppression du lead impossible : %s", exc)
+        return False
+
+
+def clear_leads_file(path: str) -> bool:
+    """Vide entièrement un CSV de leads (garde les en-têtes)."""
+    try:
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            csv.DictWriter(f, fieldnames=LEAD_COLUMNS).writeheader()
+        return True
+    except Exception as exc:
+        logging.error("Vidage du CSV impossible : %s", exc)
+        return False
 
 
 SHEETS_SCOPE = ["https://spreadsheets.google.com/feeds",
@@ -326,8 +337,17 @@ def _push_to_sheets(row: dict) -> bool:
         return False
 
 
+def _init_csv(path: str):
+    if not os.path.exists(path):
+        try:
+            with open(path, "w", encoding="utf-8-sig", newline="") as f:
+                csv.DictWriter(f, fieldnames=LEAD_COLUMNS).writeheader()
+        except Exception as exc:
+            logging.error("Création du CSV impossible : %s", exc)
+
+
 def save_lead(agency: dict, slug: str, profile: dict, score: int, qualified: bool,
-              summary: str, session_id: str) -> None:
+              summary: str, session_id: str, test_mode: bool = False) -> None:
     row = {
         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "agency_slug": slug,
@@ -343,8 +363,18 @@ def save_lead(agency: dict, slug: str, profile: dict, score: int, qualified: boo
         "threshold": agency.get("threshold", 70),
         "qualified": "oui" if qualified else "non",
         "summary": summary,
-        "source": "web",
+        "source": "test" if test_mode else "web",
     }
+    if test_mode:
+        # Prévisualisation : fichier dédié TEST — jamais mélangé aux leads réels,
+        # jamais poussé vers Google Sheets, jamais d'alerte.
+        _init_csv(TEST_LEADS_FILE)
+        try:
+            with open(TEST_LEADS_FILE, "a", encoding="utf-8", newline="") as f:
+                csv.DictWriter(f, fieldnames=LEAD_COLUMNS).writerow(row)
+        except Exception as exc:
+            logging.error("Écriture du lead TEST impossible : %s", exc)
+        return
     init_leads_csv()
     try:
         with open(LEADS_FILE, "a", encoding="utf-8", newline="") as f:
@@ -428,25 +458,37 @@ Règles : budget exprimé en euros (k = millier, M = million) ; financing :
 "pending" si financement à prévoir, "none" si aucun financement.
 Mets "null" pour toute donnée absente. Ne mets JAMAIS de texte hors JSON."""
 
-SYSTEM_QUESTION = """Tu es {assistant_name}, conseiller immobilier premium pour l'agence « {agency_name} » à {city}.
-Ton ton : chaleureux, professionnel, concis (2 à 3 phrases max), toujours en français, sans markdown ni emoji excessifs.
+SYSTEM_QUESTION = """Tu es {assistant_name}, conseiller immobilier premium et chaleureux pour l'agence « {agency_name} » à {city}.
+Ton ton : humain, bienveillant, naturel — comme un conseiller de confiance qui discute, jamais robotique.
+Parle en français, sans markdown ni emojis excessifs. Sois bref : 1 à 2 phrases maximum, TOUJOURS complètes, jamais coupées.
 Contexte du prospect : {context}
-Ton rôle est de poser UNE question à la fois pour qualifier le projet.
-QUESTION À POSER MAINTENANT ({n}/5, catégorie « {label} ») :
+Ton rôle : poser UNE seule question pour qualifier le projet (question {n}/5, catégorie « {label} »).
+QUESTION À POSER MAINTENANT :
 {template}
-Adapte légèrement la formulation au profil déjà connu du prospect (par ex. cite son prénom ou son projet),
-mais ne pose JAMAIS une autre question et ne réponds pas à sa place.
-Réponds UNIQUEMENT avec la question posée, directement : aucun titre, aucune étiquette,
-aucun préfixe ("Question :", "Ask for..."), aucune apostrophe de formatage, aucune note."""
+Adapte la formulation au profil connu du prospect (cite son prénom ou son projet si tu les connais), de façon naturelle.
+Ne pose JAMAIS une autre question et ne réponds pas à sa place.
+Réponds UNIQUEMENT avec la question, directement : aucun titre, aucune étiquette,
+aucun préfixe ("Question :", "Ask for..."), aucune apostrophe de formatage, aucune note.
+Termine TOUJOURS ta phrase (jamais de texte tronqué)."""
 
-SYSTEM_SUMMARY = """Tu es un expert immobilier. Rédige une synthèse de qualification pour un prospect.
-Réponds UNIQUEMENT en JSON valide :
+SYSTEM_CLOSING = """Tu es un expert immobilier chaleureux. À partir de la conversation, réponds UNIQUEMENT en JSON valide :
 {
-  "summary": "résumé de 2-3 phrases du projet (type, budget, ville, financement, délai, niveau de maturité)",
-  "message": "message de clôture personnalisé (2 phrases max, ton premium, français), qui :
-     - si qualifié : félicite le prospect et l'invite à réserver son rendez-vous expert ;
-     - sinon : le remercie chaleureusement et annonce qu'un conseiller le recontactera."
-}"""
+  "profile": {
+    "name": string|null,
+    "project_type": "maison"|"appartement"|"investissement"|"terrain"|"autre"|null,
+    "budget": "600k+"|"400-600k"|"250-400k"|"150-250k"|"<150k"|null,
+    "city": string|null,
+    "financing": "preapproved"|"cash"|"pending"|"none"|null,
+    "timeline": "<6"|"6-12"|"12-24"|"flexible"|null
+  },
+  "summary": "résumé de 2-3 phrases du projet (type, budget, ville, financement, délai, maturité)",
+  "message": "message de clôture humain et premium, 2 phrases maximum, en français, COMPLET (jamais coupé) :
+     - si qualifié : félicite chaleureusement le prospect et invite à réserver le rendez-vous expert ;
+     - sinon : remercie et annonce qu'un conseiller le recontactera très vite."
+}
+Règles : budget exprimé en euros (k = millier, M = million) ; financing : "preapproved" si prêt déjà accordé,
+"cash" si comptant/apport, "pending" si financement à prévoir, "none" si aucun.
+Ne mets JAMAIS de texte hors JSON."""
 
 
 def build_context(profile: dict) -> str:
@@ -466,20 +508,11 @@ def build_context(profile: dict) -> str:
     return "; ".join(parts) if parts else "aucune information pour l'instant"
 
 
-def score_profile(profile: dict, agency_city: str) -> tuple[int, dict]:
-    """Scoring déterministe : chaque réponse ajoute des points (max 100)."""
-    pts, parts = 0, {}
-    pts += parts.setdefault("Projet", PROJECT_POINTS.get(profile.get("project_type"), 0))
-    pts += parts.setdefault("Budget", BUDGET_POINTS.get(profile.get("budget"), 0))
-
-    city = (profile.get("city") or "").strip().lower()
-    ag_city = (agency_city or "").strip().lower()
-    city_pts = 15 if (city and city == ag_city) else (10 if city else 0)
-    pts += parts.setdefault("Ville", city_pts)
-
-    pts += parts.setdefault("Financement", FINANCE_POINTS.get(profile.get("financing"), 0))
-    pts += parts.setdefault("Délai", TIMELINE_POINTS.get(profile.get("timeline"), 0))
-    return min(MAX_SCORE, pts), parts
+def score_profile(profile: dict, agency_city: str, points: dict | None = None) -> tuple[int, dict]:
+    """Scoring déterministe : chaque réponse ajoute des points (max 100).
+    `points` optionnel = tables personnalisées du client (défaut = tables actuelles).
+    Le fallback déterministe et les règles existantes sont conservés."""
+    return chatbot_config.apply_points(profile, agency_city, points)
 
 
 # ---- Extraction de secours par règles (sans Gemini) ---------------------------
@@ -559,15 +592,21 @@ def extract_profile(messages: list[dict], agency_city: str) -> dict:
     return extract_profile_rules(messages, agency_city)
 
 
-def generate_welcome(agency: dict) -> str:
-    """Message d'accueil de l'assistant, au nom de l'agence."""
-    sys_p = (f"Tu es {agency.get('name')} assistant virtuel, conseiller immobilier premium à "
-             f"{agency.get('city','')}. Ton ton : chaleureux, élégant, très concis (2-3 phrases). "
-             f"En français uniquement, sans markdown, sans emoji excessif. Accueille le visiteur au nom de "
-             f"l'agence, présente-toi et demande-lui son prénom. Message : « {agency.get('description','')} »\n"
+def generate_welcome(agency: dict, assistant_name: str | None = None,
+                     welcome_message: str | None = None, tone: str = "chaleureux") -> str:
+    """Message d'accueil de l'assistant, au nom de l'agence.
+    Si `welcome_message` est défini (config client), il est utilisé tel quel."""
+    if welcome_message:
+        return welcome_message.strip()
+    a_name = assistant_name or agency.get("name")
+    sys_p = (f"Tu es {a_name}, conseiller immobilier premium et humain de l'agence {agency.get('name')} à "
+             f"{agency.get('city','')}. Ton ton : {tone}, chaleureux, naturel, très concis (2-3 phrases). "
+             f"En français uniquement, sans markdown ni emoji excessif. Accueille le visiteur au nom de "
+             f"l'agence, présente-toi en quelques mots et pose UNE seule question : son prénom. "
+             f"Termine TOUJOURS ta phrase (jamais de texte coupé). Message : « {agency.get('description','')} »\n"
              f"Réponds UNIQUEMENT avec le message d'accueil lui-même : aucun titre, aucune étiquette, "
              f"aucun préfixe (\"Message :\", \"Ask for...\", \"Accueil :\"), aucune apostrophe de formatage.")
-    msg = ai_complete(sys_p, "Présente-toi et demande le prénom du prospect.", temperature=0.8, max_tokens=250)
+    msg = ai_complete(sys_p, "Présente-toi et demande le prénom du prospect.", temperature=0.8, max_tokens=350)
     if msg:
         return msg.strip()
     return (f"Bonjour et bienvenue chez {agency.get('name')} 👋 "
@@ -576,41 +615,80 @@ def generate_welcome(agency: dict) -> str:
             f"Puis-je connaître votre prénom ?")
 
 
-def generate_question(agency: dict, profile: dict, index: int) -> str:
-    key, template = QUESTIONS[index]
+def generate_question(agency: dict, profile: dict, index: int,
+                      questions: list | None = None) -> str:
+    qs = questions or QUESTIONS
+    item = qs[index]
+    if isinstance(item, dict):
+        key, label, template = item.get("key", "autre"), item.get("label", ""), item.get("template", "")
+    elif len(item) >= 3:
+        key, label, template = item[0], item[1], item[2]
+    else:
+        key, label, template = item[0], "", item[1]
     sys_p = SYSTEM_QUESTION.format(
-        assistant_name=agency.get("name", "l'agence"),
+        assistant_name=agency.get("assistant_name") or agency.get("name", "l'agence"),
         agency_name=agency.get("name", ""),
         city=agency.get("city", ""),
         context=build_context(profile),
-        n=index + 1, label=key, template=template,
+        n=index + 1, label=label or key, template=template,
     )
-    msg = ai_complete(sys_p, "Pose la question.", temperature=0.7, max_tokens=200)
+    msg = ai_complete(sys_p, "Pose la question.", temperature=0.6, max_tokens=300)
     if msg:
         return msg.strip()
     return f"{template}"
 
 
-def generate_closing(agency: dict, profile: dict, score: int, qualified: bool) -> tuple[str, str]:
-    """Retourne (summary, message_de_cloture)."""
-    ctx = build_context(profile) + f" | score={score}/100 | qualifié={'oui' if qualified else 'non'}"
-    data = ai_json(SYSTEM_SUMMARY, ctx, max_tokens=500)
+def generate_closing(agency: dict, profile: dict, messages: list[dict],
+                     score: int, qualified: bool) -> tuple[dict, str, str]:
+    """Clôture en UN SEUL appel IA (profil final + résumé + message) pour la
+    rapidité. Retourne (profil_final, summary, message). Repli : profil courant
+    (déjà fusionné par règles) + messages modèles."""
+    convo = "\n".join(f"{'Prospect' if m['role']=='user' else 'Assistant'}: {m['content']}"
+                      for m in messages[-12:])
+    ctx = (f"Profil actuel : {build_context(profile)} | score={score}/100 | "
+           f"qualifié={'oui' if qualified else 'non'}")
+    data = ai_json(SYSTEM_CLOSING, f"{ctx}\n\nConversation :\n{convo}", max_tokens=1200)
     if data and isinstance(data, dict):
-        return data.get("summary", ""), data.get("message", "")
+        p = data.get("profile") or {}
+        cleaned = {k: (p.get(k) or None) for k in
+                   ("name", "project_type", "budget", "city", "financing", "timeline")}
+        merged = {**profile, **{k: v for k, v in cleaned.items() if v}}
+        return merged, data.get("summary", ""), data.get("message", "")
     if qualified:
-        return (f"Projet de type {profile.get('project_type') or 'immobilier'}, budget "
+        return (profile,
+                f"Projet de type {profile.get('project_type') or 'immobilier'}, budget "
                 f"{profile.get('budget') or 'à définir'}, secteur {profile.get('city') or 'à préciser'} — "
-                f"profil mature et qualifié.", f"Excellent, {profile.get('name') or ''}! Votre projet "
-                f"est très prometteur. Réservez dès maintenant votre rendez-vous expert.")
-    return (f"Profil à maturité variable (budget {profile.get('budget') or 'à préciser'}, "
+                f"profil mature et qualifié.",
+                f"Excellent, {profile.get('name') or 'cher visiteur'}! Votre projet est très "
+                f"prometteur. Réservez dès maintenant votre rendez-vous expert, on s'occupe de tout.")
+    return (profile,
+            f"Profil à maturité variable (budget {profile.get('budget') or 'à préciser'}, "
             f"financement {profile.get('financing') or 'à confirmer'}).",
-            f"Merci {profile.get('name') or ''}, un conseiller de {agency.get('name')} "
-            f"reviendra vers vous très rapidement.")
+            f"Merci {profile.get('name') or 'pour votre confiance'}, un conseiller de "
+            f"{agency.get('name')} reviendra vers vous très rapidement pour étudier votre projet.")
 
 
 # ───────────────────────────────────────────────────────────────────────────────
 # 7. DESIGN SYSTEM — CSS premium (Inter, glassmorphism, Apple-like, gold CTA)
 # ───────────────────────────────────────────────────────────────────────────────
+
+# Avatar de l'assistant : petit robot souriant humanisé (SVG embarqué, aucune
+# dépendance externe). Streamlit convertit automatiquement ce SVG en image.
+ROBOT_AVATAR_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs><linearGradient id="mng" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F0D48A"/><stop offset="1" stop-color="#C9A227"/></linearGradient></defs>
+<rect x="7" y="22" width="7" height="14" rx="3.5" fill="#9C7A14"/>
+<rect x="50" y="22" width="7" height="14" rx="3.5" fill="#9C7A14"/>
+<rect x="13" y="12" width="38" height="34" rx="13" fill="url(#mng)"/>
+<rect x="29" y="3" width="6" height="9" rx="3" fill="#9C7A14"/>
+<circle cx="32" cy="3" r="4.5" fill="#C9A227"/>
+<circle cx="24" cy="27" r="5" fill="#221A04"/>
+<circle cx="40" cy="27" r="5" fill="#221A04"/>
+<circle cx="25.6" cy="25.4" r="1.7" fill="#fff"/>
+<circle cx="41.6" cy="25.4" r="1.7" fill="#fff"/>
+<circle cx="17" cy="32" r="2.6" fill="#fff" opacity="0.55"/>
+<circle cx="47" cy="32" r="2.6" fill="#fff" opacity="0.55"/>
+<path d="M22.5 38 Q32 46.5 41.5 38" stroke="#221A04" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+</svg>"""
 
 APP_CSS = """
 <style>
@@ -649,8 +727,15 @@ html, body, [class*="css"], [data-testid="stAppViewContainer"], [data-testid="st
 ::-webkit-scrollbar-thumb:hover { background: rgba(201,162,39,.55); }
 [data-testid="stVerticalBlock"] { position: relative; z-index: 1; }
 
-/* masquer chrome Streamlit (menu, footer, deploy) */
-#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"], .stDeployButton { visibility: hidden; height: 0; }
+/* masquer 100 % du chrome Streamlit (menu, footer « Made with Streamlit »,
+   bouton Deploy, indicateur d'exécution, toolbar) — zéro filigrane */
+#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"],
+[data-testid="stStatusWidget"], [data-testid="stFooter"], [data-testid="stAppDeployButton"],
+[data-testid="stSidebarNav"], [data-testid="stPopoverMenu"], .stDeployButton {
+  display: none !important; visibility: hidden !important; height: 0 !important;
+}
+[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stAppViewContainer"] { max-width: 100vw; }
 
 /* ---------- typographie & titres ---------- */
 h1, h2, h3, h4 { font-family: 'Playfair Display', serif; letter-spacing: -0.01em; }
@@ -710,9 +795,13 @@ p, li, label, span { font-family: 'Inter', sans-serif; }
 @keyframes msgIn { from { opacity:0; } to { opacity:1; } }
 [data-testid="stChatMessage"] { animation: msgIn .25s ease-out; }
 [data-testid="stChatMessageAvatar"], [data-testid^="stChatMessageAvatar"] {
-  width: 36px; height: 36px; min-width: 36px; min-height: 36px;
+  width: 38px; height: 38px; min-width: 38px; min-height: 38px;
   display: flex; align-items: center; justify-content: center;
   font-size: 18px; line-height: 1; overflow: visible !important; border-radius: 50%;
+}
+[data-testid="stChatMessageAvatar"] img {
+  width: 100% !important; height: 100% !important; object-fit: cover;
+  border-radius: 50%; box-shadow: 0 3px 10px rgba(201,162,39,.35);
 }
 [data-testid="stChatMessageContent"] {
   padding: 12px 16px; border-radius: 20px; overflow: visible !important;
@@ -826,6 +915,14 @@ div[data-testid="stButton"] button[kind="secondary"]::after { display: none; }
 .badge-ko  { background:#FFF3E0; color:#B26A00; }
 .muted { color: var(--gray); font-size: 13px; }
 
+/* ---------- assistant de configuration (stepper 8 étapes) ---------- */
+.wiz-progress { margin: 14px 0 4px; display:flex; align-items:center; gap:12px; }
+.wiz-progress .wiz-bar { flex:1; height:10px; border-radius:999px; background:#ECECEF; overflow:hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.06); }
+.wiz-progress .wiz-bar i { display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg,#F0D48A,#C9A227 60%,#A8821A);
+  box-shadow:0 0 12px rgba(201,162,39,.45); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+
 </style>
 """
 
@@ -853,12 +950,13 @@ def render_agency_header(agency: dict):
     )
 
 
-def render_question_progress(done: int):
-    """Pastille de progression des 5 questions (dot doré = question validée)."""
-    labels = ["Projet", "Budget", "Ville", "Financement", "Délai"]
+def render_question_progress(done: int, labels: list[str] | None = None):
+    """Pastille de progression des questions (dot doré = question validée)."""
+    if not labels:
+        labels = [q[1] for q in QUESTIONS]
     dots = "".join(
         f'<span class="q-dot {"done" if i < done else ""}" title="{labels[i]}"></span>'
-        for i in range(len(QUESTIONS)))
+        for i in range(len(labels)))
     st.markdown(f'<div class="q-progress">{dots}</div>', unsafe_allow_html=True)
 
 
@@ -888,7 +986,7 @@ def score_bar(score: int, threshold: int):
 # 8. INTERFACE PROSPECT — la conversation de qualification
 # ───────────────────────────────────────────────────────────────────────────────
 
-def render_prospect(slug: str):
+def render_prospect(slug: str, test_mode: bool = False):
     agency = get_agency(slug)
     if agency is None:
         st.markdown(
@@ -903,6 +1001,13 @@ def render_prospect(slug: str):
             unsafe_allow_html=True,
         )
         st.stop()
+
+    # ---- configuration client (questions, points, seuil, assistant, thème) ----
+    cfg = chatbot_config.get_config_for_agency(agency, slug)
+    questions = cfg["questions"]
+    points = cfg["points"]
+    threshold = cfg["threshold"]
+    assistant = cfg["assistant"]
 
     # ---- session de conversation ----------------------------------------------
     ss = st.session_state
@@ -919,62 +1024,76 @@ def render_prospect(slug: str):
         ss.qualified = False
         ss.final_msg = ""
         ss.thinking = False                   # vrai pendant que l'assistant "écrit"
-        # message d'accueil généré par l'IA au nom de l'agence
-        ss.messages.append({"role": "assistant", "content": generate_welcome(agency)})
+        # message d'accueil généré par l'IA au nom de l'agence (ou message client)
+        ss.messages.append({"role": "assistant", "content": generate_welcome(
+            agency, assistant_name=assistant.get("name") or None,
+            welcome_message=assistant.get("welcome_message") or None,
+            tone=assistant.get("tone") or "chaleureux")})
 
     render_agency_header(agency)
+    inject_agency_theme(agency)
 
     if ss.prospect_stage != "welcome":
-        q_done = len(QUESTIONS) if ss.prospect_stage == "closing" else ss.q_index
-        render_question_progress(q_done)
-        score_bar(ss.score, agency.get("threshold", 70))
+        q_done = len(questions) if ss.prospect_stage == "closing" else ss.q_index
+        render_question_progress(q_done, labels=[q[1] for q in questions])
+        score_bar(ss.score, threshold)
 
     # ---- historique du chat ----------------------------------------------------
     for msg in ss.messages:
-        with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else "👤"):
+        with st.chat_message(msg["role"],
+                             avatar=ROBOT_AVATAR_SVG if msg["role"] == "assistant" else "👤"):
             st.markdown(msg["content"])
 
     # indicateur "l'assistant écrit…" (3 points animés)
     if ss.thinking:
-        with st.chat_message("assistant", avatar="🤖"):
+        with st.chat_message("assistant", avatar=ROBOT_AVATAR_SVG):
             st.markdown('<div class="typing"><span></span><span></span><span></span></div>',
                         unsafe_allow_html=True)
 
     # ---- logique : réponse prospect en attente ? (pendant l'indicateur "écrit…") --
     if ss.thinking:
-        # 1) extraction du profil (IA + repli règles) et mise à jour cumulée
-        extracted = extract_profile(ss.messages, agency.get("city", ""))
+        # 1) extraction du profil PAR RÈGLES (instantanée, zéro appel IA) et mise à
+        #    jour cumulée — l'appel IA unique n'a lieu qu'à la clôture. Résultat :
+        #    une seule requête Gemini par tour, donc des réponses ~2× plus rapides.
+        extracted = extract_profile_rules(ss.messages, agency.get("city", ""))
         for key, val in extracted.items():
             if val and not ss.answers.get(key):
                 ss.answers[key] = val
         ss.profile = {**ss.profile, **ss.answers}
-        ss.score, _ = score_profile(ss.profile, agency.get("city", ""))
+        ss.score, _ = score_profile(ss.profile, agency.get("city", ""), points=points)
 
         if ss.prospect_stage == "welcome":
             # on connaît le prénom → on démarre le questionnaire
             ss.prospect_stage = "chat"
             ss.messages.append({"role": "assistant",
-                                "content": generate_question(agency, ss.profile, 0)})
-        elif ss.q_index < len(QUESTIONS) - 1:
+                                "content": generate_question(agency, ss.profile, 0, questions=questions)})
+        elif ss.q_index < len(questions) - 1:
             ss.q_index += 1
             ss.messages.append({"role": "assistant",
-                                "content": generate_question(agency, ss.profile, ss.q_index)})
+                                "content": generate_question(agency, ss.profile, ss.q_index, questions=questions)})
         else:
-            # ---- CLOSING : score final, synthèse IA, sauvegarde, notification ----
+            # ---- CLOSING : UN seul appel IA (profil final + résumé + message) ----
             try:
-                qualified = ss.score >= agency.get("threshold", 70)
-                summary, closing = generate_closing(agency, ss.profile, ss.score, qualified)
+                qualified = ss.score >= threshold
+                final_profile, summary, closing = generate_closing(
+                    agency, ss.profile, ss.messages, ss.score, qualified)
+                ss.profile = {**ss.profile, **{k: v for k, v in final_profile.items() if v}}
+                ss.score, _ = score_profile(ss.profile, agency.get("city", ""), points=points)
+                qualified = ss.score >= threshold
                 ss.summary, ss.qualified, ss.final_msg = summary, qualified, closing
-                save_lead(agency, slug, ss.profile, ss.score, qualified, summary, ss.session_id)
-                notify_agency(agency, ss.profile.get("name", ""), ss.score, qualified)
-                st.toast("📩 Profil enregistré — l'agence a été notifiée" if qualified
-                         else "📩 Profil enregistré")
+                save_lead(agency, slug, ss.profile, ss.score, qualified, summary, ss.session_id,
+                          test_mode=test_mode)
+                if not test_mode:
+                    notify_agency(agency, ss.profile.get("name", ""), ss.score, qualified)
+                st.toast("🧪 Profil TEST enregistré (séparé des leads réels)" if test_mode
+                         else ("📩 Profil enregistré — l'agence a été notifiée" if qualified
+                                else "📩 Profil enregistré"))
             except Exception as exc:
                 # la clôture doit TOUJOURS aboutir (pas de doublon, pas d'écran d'erreur)
                 logging.error("Clôture impossible : %s", exc)
                 summary = ss.summary or "Profil qualifié."
                 closing = ss.final_msg or ("Merci, un conseiller reviendra vers vous.")
-                ss.qualified = ss.score >= agency.get("threshold", 70)
+                ss.qualified = ss.score >= threshold
             ss.messages.append({"role": "assistant", "content": closing})
             ss.prospect_stage = "closing"
 
@@ -991,9 +1110,8 @@ def render_prospect(slug: str):
 
     # ---- écran final (score >= seuil → bouton doré Calendly) --------------------
     if ss.prospect_stage == "closing":
-        threshold = agency.get("threshold", 70)
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-        parts = score_profile(ss.profile, agency.get("city", ""))[1]
+        parts = score_profile(ss.profile, agency.get("city", ""), points=points)[1]
         parts_html = "".join(
             f"<span class='badge badge-ok'>{html.escape(k)} : {v} pts</span> " for k, v in parts.items()
         )
@@ -1041,7 +1159,79 @@ def render_prospect(slug: str):
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-# 9. INTERFACE ADMIN — configuration, tableau de bord, alertes, embed
+# 8bis. THÈME CLIENT (couleurs) + PRÉVISUALISATION ADMIN (mode TEST)
+# ───────────────────────────────────────────────────────────────────────────────
+
+def _hex_to_rgb(h: str) -> tuple | None:
+    h = (h or "").strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return None
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _mix_hex(h: str, white: int, factor: float) -> str:
+    rgb = _hex_to_rgb(h)
+    if not rgb:
+        return h
+    out = tuple(round(c + (white - c) * factor) for c in rgb)
+    return "#{:02X}{:02X}{:02X}".format(*out)
+
+
+def inject_agency_theme(agency: dict):
+    """Surcharge les variables dorées du design par les couleurs du client
+    (les classes existantes utilisent var(--gold…) → aucune régression CSS)."""
+    primary = (agency or {}).get("primary_color") or ""
+    secondary = (agency or {}).get("secondary_color") or ""
+    if not primary and not secondary:
+        return
+    p = primary or "#C9A227"
+    s = secondary or "#9C7A14"
+    soft = _mix_hex(p, 255, 0.75)
+    pale = _mix_hex(p, 255, 0.92)
+    st.markdown(
+        f"<style>:root{{--gold:{p};--gold-dark:{s};--gold-soft:{soft};--gold-pale:{pale};}}</style>",
+        unsafe_allow_html=True,
+    )
+
+
+def _reset_prospect_state():
+    for k in ("prospect_stage", "messages", "q_index", "answers", "profile",
+              "score", "summary", "session_id", "qualified", "final_msg", "thinking"):
+        st.session_state.pop(k, None)
+
+
+def render_admin_preview():
+    """Onglet 👁 Prévisualisation : choisir une agence puis tester le chat.
+    Mode test par défaut → leads marqués TEST, séparés des leads réels."""
+    st.markdown("### 👁 Prévisualiser le chatbot")
+    clients = clients_store.load_clients()
+    if not clients:
+        st.info("Aucun client. Créez-en un dans l'onglet « 🏢 Clients ».")
+        return
+    options = [(ag.get("name") or cid, cl.get("slug") or cid)
+               for cid, cl in clients.items()
+               for ag in [cl.get("agency") or {}]]
+    labels = [n for n, _ in options]
+    sel = st.selectbox("Agence à prévisualiser", labels, key="pv_sel")
+    slug = next((s for n, s in options if n == sel), options[0][1] if options else None)
+    test_mode = st.checkbox("Mode test — les leads sont marqués TEST et séparés des leads réels",
+                            value=True, key="pv_test")
+    if st.button("🔄 Nouvelle conversation", key="pv_reset"):
+        _reset_prospect_state()
+        st.rerun()
+    if slug:
+        st.caption(f"Prévisualisation de « {sel} » · mode {'TEST' if test_mode else 'RÉEL'} · "
+                   "le lead est sauvegardé à la fin de la conversation")
+        render_prospect(slug, test_mode=bool(test_mode))
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 9. INTERFACE ADMIN — clients, configuration, chatbots, preview, install, guides, leads, alertes, paramètres
 # ───────────────────────────────────────────────────────────────────────────────
 
 def render_admin():
@@ -1090,106 +1280,65 @@ def render_admin():
         st.warning("⚠️ **Clé Gemini non configurée** — définissez `GEMINI_API_KEY` dans `.env` "
                    "pour activer l'IA. L'application fonctionne en mode dégradé (messages modèles).")
 
-    tab_agences, tab_sheets, tab_leads, tab_alertes, tab_embed = st.tabs(
-        ["🏢 Agences", "📗 Google Sheets", "📊 Leads", "🔔 Alertes", "🔌 Embed"])
+    # navigation programmatique entre onglets (boutons internes, ex. « Modifier »)
+    goto = st.session_state.pop("goto_tab", None)
+    if goto:
+        st.session_state["admin_tabs"] = goto
 
-    agencies = load_agencies()
-    slugs = list(agencies.keys())
+    tab_clients, tab_wizard, tab_bots, tab_preview, tab_install, tab_guides, tab_leads, tab_alertes, tab_params = st.tabs(
+        ["🏢 Clients", "🛠 Configuration", "🤖 Chatbots", "👁 Prévisualisation",
+         "📦 Installation", "📘 Guides", "📊 Leads", "🔔 Alertes", "⚙️ Paramètres"],
+        key="admin_tabs")
 
-    # ============ Onglet AGENCES ============
-    with tab_agences:
-        st.markdown("### Configuration de l'agence")
-        if slugs:
-            sel = st.selectbox("Agence à configurer", slugs,
-                               format_func=lambda s: f"{agencies[s].get('name', s)} — {s}",
-                               key="adm_sel")
-            a = agencies[sel]
-        else:
-            sel, a = None, {}
+    # ============ Onglet CLIENTS ============
+    with tab_clients:
+        admin_views.render_clients_tab(APP_BASE_URL)
 
-        with st.form("agency_form", clear_on_submit=False):
-            # Clés liées au slug : évite que Streamlit garde les valeurs d'une autre agence
-            c1, c2 = st.columns(2)
-            name = c1.text_input("Nom de l'agence", a.get("name", ""), key=f"f_name_{sel}")
-            city = c2.text_input("Ville", a.get("city", ""), key=f"f_city_{sel}")
-            c3, c4 = st.columns(2)
-            logo = c3.text_input("URL du logo", a.get("logo_url", ""),
-                                 placeholder="https://…/logo.png", key=f"f_logo_{sel}")
-            email = c4.text_input("Email de l'agence (alertes)", a.get("email", ""),
-                                  key=f"f_email_{sel}")
-            calendly = st.text_input("Lien Calendly", a.get("calendly_url", ""),
-                                     placeholder="https://calendly.com/…", key=f"f_cal_{sel}")
-            desc = st.text_input("Description / slogan", a.get("description", ""),
-                                 key=f"f_desc_{sel}")
-            threshold = st.slider("Seuil de qualification (score minimal)", 0, 100,
-                                  int(a.get("threshold", 70)), step=5, key=f"f_thr_{sel}")
-            app_url = st.text_input("URL publique de l'application", a.get("app_url", APP_BASE_URL),
-                                    help="Sert à générer le lien de qualification et le code iframe.",
-                                    key=f"f_url_{sel}")
-            submitted = st.form_submit_button("💾 Enregistrer l'agence",
-                                              use_container_width=True, type="primary")
+    # ============ Onglet CONFIGURATION (parcours 8 étapes) ============
+    with tab_wizard:
+        admin_views.render_wizard_tab(APP_BASE_URL)
 
-        if submitted and name.strip():
-            slug = slugify(name)
-            agencies[slug] = {
-                "name": name.strip(), "logo_url": logo.strip(), "city": city.strip(),
-                "email": email.strip(), "calendly_url": calendly.strip(),
-                "threshold": int(threshold), "description": desc.strip(),
-                "app_url": (app_url.strip() or APP_BASE_URL),
-                "created_at": a.get("created_at") or datetime.datetime.now().isoformat(timespec="seconds"),
-            }
-            if sel and sel != slug:
-                agencies.pop(sel, None)
-            save_agencies(agencies)
-            st.success(f"✅ Agence « {name} » enregistrée.")
-            st.rerun()
+    # ============ Onglet CHATBOTS ============
+    with tab_bots:
+        admin_views.render_chatbots_tab()
 
-        if slugs:
-            base = (a.get("app_url") or APP_BASE_URL).rstrip("/")
-            qualify_url = f"{base}/?agency={sel}"
-            st.divider()
-            st.markdown("### 🔗 URL de qualification générée")
-            st.code(qualify_url, language=None)
-            st.caption("💡 Cliquez sur l'icône **Copier** (en haut à droite du bloc) pour récupérer "
-                       "le lien à partager et à intégrer sur le site de l'agence.")
-            st.markdown("_Ouvrez ce lien dans un **nouvel onglet privé** pour vivre "
-                        "l'expérience prospect (score, bouton doré, sauvegarde du lead)._")
+    # ============ Onglet PRÉVISUALISATION (mode TEST) ============
+    with tab_preview:
+        render_admin_preview()
 
-        # ============ Onglet GOOGLE SHEETS ============
-    with tab_sheets:
-        st.markdown("### 📗 Stockage Google Sheets")
-        st.markdown(
-            "_Les leads sont **toujours** sauvegardés en local (`leads.csv`) et, si vous configurez "
-            "Google Sheets ci-dessous, **aussi** poussés en temps réel dans votre spreadsheet "
-            "(feuille `Leads` créée automatiquement)._")
-        s_cfg = sheets_load_config()
-        with st.form("sheets_form", clear_on_submit=False):
-            srv_json = st.text_area(
-                "Clé JSON du service account (collez le contenu complet du fichier .json)",
-                value=s_cfg.get("service_account", ""), height=170,
-                help="Google Cloud Console → IAM & Admin → Comptes de service → Créer clé → JSON. "
-                     "Ou chemin local du fichier dans GOOGLE_SHEETS_JSON.")
-            sh_key = st.text_input(
-                "ID ou URL du spreadsheet Google Sheets",
-                value=s_cfg.get("spreadsheet", GDRIVE_KEY or ""),
-                placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
-                help="Partagez le spreadsheet avec l'e-mail du service account (rôle Éditeur).")
-            c_s1, c_s2 = st.columns(2)
-            save_sheets = c_s1.form_submit_button("💾 Enregistrer", use_container_width=True)
-            test_sheets = c_s2.form_submit_button("🔌 Tester la connexion", use_container_width=True)
-        if save_sheets or test_sheets:
-            # on sauvegarde d'abord (le test utilise alors les valeurs du formulaire)
-            sheets_save_config({"service_account": srv_json.strip(),
-                                "spreadsheet": sh_key.strip()})
-        if save_sheets:
-            st.success("✅ Configuration Google Sheets enregistrée.")
-        if test_sheets:
-            ok, msg = test_sheets_connection(service=srv_json.strip(), sheet_ref=sh_key.strip())
-            (st.success if ok else st.error)(msg)
+    # ============ Onglet INSTALLATION (code, iframe, identifiant, clé) ============
+    with tab_install:
+        admin_views.render_install_tab()
+
+    # ============ Onglet GUIDES (guide interactif + exports) ============
+    with tab_guides:
+        admin_views.render_guides_tab()
 
     # ============ Onglet LEADS ============
     with tab_leads:
         st.markdown("### Tableau de bord des prospects")
+        with st.expander("🧪 Leads de TEST (prévisualisation)", expanded=False):
+            test_rows = load_csv_rows(TEST_LEADS_FILE) if os.path.exists(TEST_LEADS_FILE) else []
+            st.caption(f"{len(test_rows)} lead(s) de test — jamais mélangés aux leads réels.")
+            if test_rows:
+                st.dataframe(test_rows, use_container_width=True, hide_index=True, height=220)
+                del_sel = st.selectbox(
+                    "🗑️ Supprimer un lead de test",
+                    [f"{i + 1}. {r.get('timestamp', '')} — {r.get('name') or 'anonyme'} — "
+                     f"{r.get('agency_name') or r.get('agency_slug') or ''} (score {r.get('score') or 0})"
+                     for i, r in enumerate(test_rows)], key="del_test_sel")
+                c1, c2 = st.columns(2)
+                if c1.button("Supprimer ce lead de test", use_container_width=True, key="del_test_one"):
+                    idx = [f"{i + 1}. {r.get('timestamp', '')} — {r.get('name') or 'anonyme'} — "
+                           f"{r.get('agency_name') or r.get('agency_slug') or ''} (score {r.get('score') or 0})"
+                           for i, r in enumerate(test_rows)].index(del_sel)
+                    delete_lead_row(TEST_LEADS_FILE, idx)
+                    st.rerun()
+                if c2.button("🧹 Tout effacer", use_container_width=True, key="del_test_all"):
+                    clear_leads_file(TEST_LEADS_FILE)
+                    st.rerun()
+            else:
+                st.caption("Aucun lead de test pour l'instant.")
         leads = load_leads()
         if not leads:
             st.info("Aucun lead capturé pour le moment. Partagez une URL de qualification "
@@ -1224,6 +1373,23 @@ def render_admin():
             st.download_button("⬇️ Exporter tous les leads (CSV)", buf.getvalue(),
                                file_name="maisonnova-leads.csv", mime="text/csv")
 
+            with st.expander("🗑️ Supprimer un lead", expanded=False):
+                st.caption("La suppression retire le lead du fichier CSV local. "
+                           "(La copie éventuelle dans Google Sheets n'est pas modifiée.)")
+                del_sel2 = st.selectbox(
+                    "Lead à supprimer",
+                    [f"{i + 1}. {l.get('timestamp', '')} — {l.get('name') or 'anonyme'} — "
+                     f"{l.get('agency_name') or l.get('agency_slug') or ''} (score {l.get('score') or 0})"
+                     for i, l in enumerate(leads)], key="del_real_sel")
+                confirm2 = st.checkbox("Je confirme la suppression de ce lead", key="del_real_confirm")
+                if st.button("🗑️ Supprimer définitivement", type="secondary", disabled=not confirm2,
+                             use_container_width=True, key="del_real_btn"):
+                    idx2 = [f"{i + 1}. {l.get('timestamp', '')} — {l.get('name') or 'anonyme'} — "
+                            f"{l.get('agency_name') or l.get('agency_slug') or ''} (score {l.get('score') or 0})"
+                            for i, l in enumerate(leads)].index(del_sel2)
+                    delete_lead_row(LEADS_FILE, idx2)
+                    st.rerun()
+
     # ============ Onglet ALERTES ============
     with tab_alertes:
         st.markdown("### Notifications d'alerte")
@@ -1236,26 +1402,12 @@ def render_admin():
         else:
             st.info("Aucune alerte émise pour l'instant.")
 
-    # ============ Onglet EMBED ============
-    with tab_embed:
-        st.markdown("### Intégration iframe (8.5 × 11)")
-        st.markdown(
-            "_Collez ce snippet sur votre site externe. Le widget est optimisé pour le format "
-            "portrait lettre (8.5 × 11) : fond blanc, centrage, aucune barre Streamlit._")
-        if slugs:
-            sel_e = st.selectbox("Agence à embarquer", slugs, key="adm_embed_sel")
-            a_e = agencies[sel_e]
-            base = (a_e.get("app_url") or APP_BASE_URL).rstrip("/")
-            url = f"{base}/?agency={sel_e}&embed=1"
-            snippet = (
-                f'<iframe src="{html.escape(url)}" width="460" height="620" '
-                f'style="border:none; border-radius:16px; box-shadow:0 12px 40px rgba(31,38,66,.15);" '
-                f'title="Qualification {html.escape(a_e.get("name",""))}" loading="lazy"></iframe>'
-            )
-            st.code(snippet, language="html")
-            st.link_button("🌐 Prévisualiser le widget", url)
-        else:
-            st.info("Créez d'abord une agence dans l'onglet « Agences ».")
+    # ============ Onglet PARAMÈTRES (Google Sheets + fichiers + sécurité) ============
+    with tab_params:
+        admin_views.render_settings_tab(
+            sheets_load_config, sheets_save_config, test_sheets_connection,
+            default_gdrive_key=GDRIVE_KEY,
+            admin_password_set=ADMIN_PASSWORD not in ("admin123", "", "changez-moi"))
 
     if st.button("Déconnexion", key="logout"):
         ss.admin_auth = False
